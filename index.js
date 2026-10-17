@@ -32,7 +32,7 @@ client.once('ready', async () => {
   console.log('✅ Slash command terdaftar!');
 });
 
-// SISTEM XP
+// SISTEM XP - GAK GUE UBAH SAMA SEKALI
 client.on('messageCreate', async (message) => {
   if (message.author.bot || !message.guild) return;
   if (cooldowns.has(message.author.id)) return;
@@ -62,7 +62,7 @@ client.on('messageCreate', async (message) => {
   setTimeout(() => cooldowns.delete(message.author.id), 60000);
 });
 
-// INI YANG BIKIN /level & /leaderboard JADI RESPON BOS!
+// INI YANG GUE UBAH JADI EMBED CAKEP BOS!
 client.on('interactionCreate', async (interaction) => {
   if (!interaction.isChatInputCommand()) return;
 
@@ -71,7 +71,22 @@ client.on('interactionCreate', async (interaction) => {
   if (interaction.commandName === 'level') {
     if (!levels[key]) levels[key] = { xp: 0, level: 0 };
     const nextXp = Math.pow((levels[key].level + 1) / 0.1, 2);
-    await interaction.reply(`🔥 <@${interaction.user.id}> kamu Level **${levels[key].level}** dengan XP **${levels[key].xp} / ${Math.floor(nextXp)}**`);
+    const currentXp = levels[key].xp;
+    const nextLevelXp = Math.floor(nextXp);
+    
+    // Progress bar
+    const percent = Math.min((currentXp / nextXp) * 100, 100);
+    const progress = Math.floor(percent / 10);
+    const bar = '█'.repeat(progress) + '░'.repeat(10 - progress);
+
+    const embed = new EmbedBuilder()
+      .setColor('#5865F2')
+      .setAuthor({ name: `Level Card - ${interaction.user.username}`, iconURL: interaction.user.displayAvatarURL() })
+      .setThumbnail(interaction.user.displayAvatarURL())
+      .setDescription(`**Level:** ${levels[key].level}\n**XP:** ${currentXp} / ${nextLevelXp}\n\n${bar} **${Math.floor(percent)}%**\n\n> Terus aktif chat biar cepet naik level! 🔥`)
+      .setFooter({ text: `Requested by ${interaction.user.username}` });
+
+    await interaction.reply({ embeds: [embed] });
   }
 
   if (interaction.commandName === 'leaderboard') {
