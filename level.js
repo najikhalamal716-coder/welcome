@@ -1,92 +1,111 @@
-const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
+const { SlashCommandBuilder, EmbedBuilder, AttachmentBuilder } = require('discord.js');
 const fs = require('fs');
 const path = require('path');
+const { createCanvas } = require('@napi-rs/canvas');
 
-const levelFile = path.join(__dirname, 'levels.json');
-const levelFileAlt = path.join(__dirname, 'data', 'levels.json');
-
-const levelRequirements = [
-    { level: 1, xp: 0 }, { level: 2, xp: 50 }, { level: 3, xp: 105 },
-    { level: 4, xp: 210 }, { level: 5, xp: 315 }, { level: 6, xp: 420 },
-    { level: 7, xp: 525 }, { level: 8, xp: 630 }, { level: 9, xp: 735 },
-    { level: 10, xp: 845 }, { level: 11, xp: 950 }, { level: 12, xp: 1055 },
-    { level: 13, xp: 1160 }, { level: 14, xp: 1265 }, { level: 15, xp: 1370 },
-    { level: 16, xp: 1475 }, { level: 17, xp: 1580 }, { level: 18, xp: 1685 },
-    { level: 19, xp: 1790 }, { level: 20, xp: 1895 }, { level: 21, xp: 2000 },
-    { level: 22, xp: 2105 }, { level: 23, xp: 2210 }, { level: 24, xp: 2315 },
-    { level: 25, xp: 2420 }, { level: 26, xp: 2525 }, { level: 27, xp: 2630 },
-    { level: 28, xp: 2735 }, { level: 29, xp: 2840 }, { level: 30, xp: 2945 },
-    { level: 31, xp: 3050 }, { level: 32, xp: 3155 }, { level: 33, xp: 3260 },
-    { level: 34, xp: 3365 }, { level: 35, xp: 3470 }, { level: 36, xp: 3575 },
-    { level: 37, xp: 3680 }, { level: 38, xp: 3785 }, { level: 39, xp: 3890 },
-    { level: 40, xp: 3995 }
+const possiblePaths = [
+    path.join(__dirname, 'levels.json'),
+    path.join(__dirname, 'level.json'),
+    path.join(__dirname, 'data', 'levels.json')
 ];
 
 function getLevelFromXP(xp) {
-    let currentLevel = 1;
-    for (const r of levelRequirements) {
-        if (xp >= r.xp) currentLevel = r.level;
+    const req = [0,50,105,210,315,420,525,630,735,845,950,1055,1160,1265,1370,1475,1580,1685,1790,1895,2000];
+    let lvl = 1;
+    let nextXP = req[1];
+    for(let i=0;i<req.length;i++){
+        if(xp>=req[i]){
+            lvl=i+1;
+            nextXP = req[i+1] || req[i];
+        }
     }
-    return currentLevel;
+    const currentReq = req[lvl-1] || 0;
+    return { level: lvl, nextXP, currentReq };
 }
 
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('level')
-        .setDescription('Cek level kamu')
-        .addUserOption(opt => opt.setName('user').setDescription('Cek user lain').setRequired(false)),
-
+        .setDescription('Lihat level kamu')
+        .addUserOption(o=>o.setName('user').setDescription('Lihat level orang lain').setRequired(false)),
     async execute(interaction) {
-        let levels = {};
+        const targetUser = interaction.options.getUser('user') || interaction.user;
+        
+        // AMBIL DISPLAY NAME BOS - INI KUNCINYA
+        const member = await interaction.guild.members.fetch(targetUser.id).catch(()=>null);
+        const displayName = member?.displayName || targetUser.globalName || targetUser.displayName || targetUser.username;
+
+        let levels={};
         try {
-            if (fs.existsSync(levelFile)) {
-                levels = JSON.parse(fs.readFileSync(levelFile, 'utf8'));
-            } else if (fs.existsSync(levelFileAlt)) {
-                levels = JSON.parse(fs.readFileSync(levelFileAlt, 'utf8'));
-            } else {
-                return interaction.reply({ content: '❌ File levels.json tidak ditemukan bos! Push dulu ke GitHub!', flags: 64 });
+            for(const p of possiblePaths){
+                if(fs.existsSync(p)){
+                    levels=JSON.parse(fs.readFileSync(p,'utf8'));
+                    break;
+                }
             }
-        } catch (e) {
-            console.error(e);
-            return interaction.reply({ content: '❌ Data level sedang mengalami masalah.', flags: 64 });
-        }
+        } catch {}
 
-        const target = interaction.options.getUser('user') || interaction.user;
-        const guildId = interaction.guild.id;
-        
-        // SUPPORT 2 FORMAT KEY: PAKAI - DAN _
-        let data = levels[`${guildId}-${target.id}`] || levels[`${guildId}_${target.id}`];
-        
-        // CARI JUGA LEWAT VALUES KALO KEY GA KETEMU
-        if (!data) {
-            data = Object.values(levels).find(v => v.userId === target.id && v.guildId === guildId);
-        }
+        const key = `${targetUser.id}-${interaction.guild.id}`;
+        const data = levels[key] || { xp: 0 };
+        const { level, nextXP, currentReq } = getLevelFromXP(data.xp);
 
-        if (!data) {
-            return interaction.reply({ content: `❌ ${target.username} belum ada data level! Chat dulu bos!`, flags: 64 });
-        }
+        const xpInLevel = data.xp - currentReq;
+        const xpNeeded = nextXP - currentReq;
+        const percent = Math.min(100, Math.max(0, (xpInLevel / xpNeeded) * 100));
 
-        const currentXP = data.xp || 0;
-        const currentLevel = getLevelFromXP(currentXP);
-        const nextLevelReq = levelRequirements.find(r => r.level === currentLevel + 1);
-        const nextXP = nextLevelReq ? nextLevelReq.xp : currentXP;
-        const needed = nextLevelReq ? nextXP - currentXP : 0;
+        // BIKIN CARD CANVAS
+        const canvas = createCanvas(800, 250);
+        const ctx = canvas.getContext('2d');
+
+        // Background
+        ctx.fillStyle = '#2f3136';
+        ctx.fillRect(0,0,canvas.width, canvas.height);
+
+        // Avatar
+        try {
+            const avatarURL = targetUser.displayAvatarURL({extension:'png', size:128});
+            const res = await fetch(avatarURL);
+            const buf = Buffer.from(await res.arrayBuffer());
+            // bulat
+            ctx.save();
+            ctx.beginPath();
+            ctx.arc(100, 125, 70, 0, Math.PI*2);
+            ctx.clip();
+            const { loadImage } = require('@napi-rs/canvas');
+            const img = await loadImage(buf);
+            ctx.drawImage(img, 30, 55, 140, 140);
+            ctx.restore();
+        } catch {}
+
+        // Display Name (bukan username)
+        ctx.fillStyle = '#ffffff';
+        ctx.font = 'bold 32px sans-serif';
+        ctx.fillText(displayName, 200, 90);
+
+        // Level Text
+        ctx.fillStyle = '#b9bbbe';
+        ctx.font = '20px sans-serif';
+        ctx.fillText(`LEVEL ${String(level).padStart(2,'0')} • ${data.xp} / ${nextXP} XP`, 200, 125);
+
+        // Progress Bar BG
+        ctx.fillStyle = '#4f545c';
+        ctx.fillRect(200, 150, 550, 25);
+
+        // Progress Bar Fill
+        ctx.fillStyle = '#5865f2';
+        ctx.fillRect(200, 150, 550 * (percent/100), 25);
+
+        ctx.fillStyle = '#ffffff';
+        ctx.font = '16px sans-serif';
+        ctx.fillText(`${Math.floor(percent)}%`, 200, 200);
+
+        const attachment = new AttachmentBuilder(canvas.toBuffer('image/png'), {name:'level.png'});
 
         const embed = new EmbedBuilder()
-            .setTitle(`📊 Level - ${target.username}`)
-            .setThumbnail(target.displayAvatarURL({ dynamic: true }))
-            .setDescription(
-                `〔 📜 PERKEMBANGAN PADEPOKAN 〕\n\n` +
-                `**${target.username}** telah mencapai tingkat baru.\n\n` +
-                `✦ LEVEL ${String(currentLevel).padStart(2, '0')}\n` +
-                `✦ ${currentXP} XP\n` +
-                (nextLevelReq ? `✦ Butuh ${needed} XP lagi untuk Level ${currentLevel + 1}\n\n` : `\n`) +
-                `“Jejak baru tercatat dalam perjalananmu, Terimakasih sudah aktif.”\n\n` +
-                `BOT PADEPOKAN • SISTEM SERVER`
-            )
+            .setDescription(`✦ **${displayName}**\nLEVEL ${String(level).padStart(2,'0')} • ${data.xp} XP`)
             .setColor(0x2f3136)
-            .setTimestamp();
+            .setImage('attachment://level.png');
 
-        await interaction.reply({ embeds: [embed] });
+        await interaction.reply({embeds:[embed], files:[attachment]});
     }
 };
