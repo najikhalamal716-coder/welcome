@@ -14,96 +14,119 @@ const client = new Client({
 
 client.commands = new Collection();
 
-// Load Commands
+// Load semua file command (termasuk claimrole.js lu)
 const commandFiles = fs.readdirSync(__dirname).filter(f => f.endsWith('.js') && f !== 'index.js');
 for (const file of commandFiles) {
-    const command = require(path.join(__dirname, file));
-    if (command.data && command.execute) {
-        client.commands.set(command.data.name, command);
+    try {
+        const command = require(path.join(__dirname, file));
+        if (command.data && command.execute) {
+            client.commands.set(command.data.name, command);
+        }
+    } catch (e) {
+        console.log(`Gagal load ${file}: ${e.message}`);
     }
 }
 
 client.once(Events.ClientReady, () => {
-    console.log(`BOT ONLINE BOS! Login sebagai ${client.user.tag} 🔥`);
+    console.log(`BOT ONLINE BOS! ${client.user.tag}`);
 });
 
-// Handle Slash Command
+// === HANDLER LENGKAP - COMMAND + TOMBOL CLAIM ROLE ===
 client.on(Events.InteractionCreate, async interaction => {
-    if (!interaction.isChatInputCommand()) return;
-    const command = client.commands.get(interaction.commandName);
-    if (!command) return;
-    try {
-        await command.execute(interaction);
-    } catch (err) {
-        console.error(err);
+    // 1. HANDLE SLASH COMMAND (/claimrole, dll)
+    if (interaction.isChatInputCommand()) {
+        const command = client.commands.get(interaction.commandName);
+        if (!command) return;
+        try {
+            await command.execute(interaction);
+        } catch (err) {
+            console.error(err);
+            if (!interaction.replied && !interaction.deferred) {
+                await interaction.reply({ content: 'Error bos!', ephemeral: true }).catch(()=>{});
+            }
+        }
+        return;
+    }
+    
+    // 2. HANDLE TOMBOL CLAIM LAKI / PEREMPUAN (PUNYA LU)
+    if (interaction.isButton()) {
+        const roleMap = {
+            'claim_laki': 'LAKI-LAKI',
+            'claim_perempuan': 'PEREMPUAN'
+        };
+
+        const roleName = roleMap[interaction.customId];
+        if (!roleName) return;
+
+        const role = interaction.guild.roles.cache.find(r => r.name.toUpperCase() === roleName);
+        if (!role) {
+            return interaction.reply({ 
+                content: `❌ Role **${roleName}** belum ada bos! Bikin dulu di Server Settings > Roles > Create Role nama persis **${roleName}**`, 
+                ephemeral: true 
+            });
+        }
+
+        const member = interaction.member;
+        const otherRoleName = roleName === 'LAKI-LAKI' ? 'PEREMPUAN' : 'LAKI-LAKI';
+        const otherRole = interaction.guild.roles.cache.find(r => r.name.toUpperCase() === otherRoleName);
+
+        try {
+            // Hapus role lawan jenis biar cuma 1
+            if (otherRole && member.roles.cache.has(otherRole.id)) {
+                await member.roles.remove(otherRole);
+            }
+
+            if (member.roles.cache.has(role.id)) {
+                await interaction.reply({ content: `Kamu sudah punya role **${roleName}**! ${roleName === 'LAKI-LAKI' ? '👨' : '👩'}`, ephemeral: true });
+            } else {
+                await member.roles.add(role);
+                await interaction.reply({ content: `✅ Berhasil! Kamu sekarang **${roleName}** ${roleName === 'LAKI-LAKI' ? '👨' : '👩'}`, ephemeral: true });
+            }
+        } catch (e) {
+            console.error(e);
+            await interaction.reply({ content: '❌ Bot gak punya izin! Naikin posisi role bot di atas role LAKI-LAKI/PEREMPUAN di Server Settings > Roles!', ephemeral: true });
+        }
     }
 });
 
-// --- WELCOME IMAGE FINAL - PRESISI & ANTI KOTAK-KOTAK ---
+// === WELCOME IMAGE - PRESISI & ANTI KOTAK ===
 async function createWelcomeImage(member, type) {
-    const possibleFiles = type === 'join' 
-        ? ['welcome-bg.png', 'welcome-bg.jpg', 'welcome-bg.jpeg'] 
-        : ['goodbye-bg.png', 'goodbye-bg.jpg', 'goodbye-bg.jpeg'];
-    
+    const possibleFiles = type === 'join' ? ['welcome-bg.png','welcome-bg.jpg'] : ['goodbye-bg.png','goodbye-bg.jpg'];
     let bgPath = null;
     for (const f of possibleFiles) {
         const p = path.join(__dirname, 'assets', f);
         if (fs.existsSync(p)) { bgPath = p; break; }
     }
-    
-    if (!bgPath) {
-        console.error('[ERROR] File background gak ketemu di folder assets!');
-        return null;
-    }
+    if (!bgPath) return null;
 
-    console.log(`[WELCOME] Load background: ${bgPath}`);
     const background = await loadImage(bgPath);
     const canvas = createCanvas(background.width, background.height);
     const ctx = canvas.getContext('2d');
     ctx.drawImage(background, 0, 0, canvas.width, canvas.height);
 
-    // SETTINGAN PRESISI - PAS TENGAH FRAME EMAS
     const centerX = canvas.width / 2;
-    const centerY = canvas.height * 0.525; // Posisi Y pas di tengah lingkaran emas
-    const avatarRadius = canvas.height * 0.255; // Ukuran kecil biar gak nutupin tulisan
+    const centerY = canvas.height * 0.525;
+    const avatarRadius = canvas.height * 0.255;
 
     try {
-        const avatarURL = member.user.displayAvatarURL({ extension: 'png', size: 1024, forceStatic: false });
+        const avatarURL = member.user.displayAvatarURL({ extension: 'png', size: 1024, forceStatic: true });
         const avatar = await loadImage(avatarURL);
-        
         ctx.save();
         ctx.beginPath();
-        ctx.arc(centerX, centerY, avatarRadius, 0, Math.PI * 2, true);
-        ctx.closePath();
-        ctx.clip();
-        ctx.drawImage(avatar, centerX - avatarRadius, centerY - avatarRadius, avatarRadius * 2, avatarRadius * 2);
-        ctx.restore();
-
-        // Border tipis biar rapih
-        ctx.beginPath();
         ctx.arc(centerX, centerY, avatarRadius, 0, Math.PI * 2);
-        ctx.strokeStyle = 'rgba(233, 197, 122, 0.2)';
-        ctx.lineWidth = 2;
-        ctx.stroke();
-    } catch (e) { 
-        console.log('Gagal load avatar', e);
-    }
+        ctx.clip();
+        ctx.drawImage(avatar, centerX - avatarRadius, centerY - avatarRadius, avatarRadius*2, avatarRadius*2);
+        ctx.restore();
+    } catch(e){}
 
-    // USERNAME - ANTI KOTAK-KOTAK 100%
     ctx.textAlign = 'center';
     ctx.fillStyle = '#E9C57A';
-    ctx.shadowColor = 'rgba(0,0,0,0.8)';
-    ctx.shadowBlur = 8;
-    
-    let rawName = member.displayName || member.user.username;
-    // Hapus emoji & simbol aneh, sisain huruf angka doang
-    let cleanName = rawName.replace(/[^\x00-\x7F]/g, '').replace(/[^A-Za-z0-9 ]/g, '').trim().toUpperCase().substring(0, 16);
-    if (!cleanName) cleanName = member.user.username.replace(/[^A-Za-z0-9]/g, '').toUpperCase().substring(0, 16);
-    if (!cleanName) cleanName = "MEMBER BARU";
-    
-    ctx.font = `bold ${Math.floor(canvas.width * 0.038)}px Sans`;
+    ctx.shadowColor = 'rgba(0,0,0,0.9)';
+    ctx.shadowBlur = 10;
+    let cleanName = member.user.username.toUpperCase().replace(/[^A-Z0-9]/g, '').substring(0, 16);
+    if (cleanName.length < 2) cleanName = "MEMBER BARU";
+    ctx.font = `bold ${Math.floor(canvas.width * 0.042)}px Sans`;
     ctx.fillText(cleanName, centerX, canvas.height * 0.89);
-    ctx.shadowBlur = 0;
 
     return canvas.toBuffer('image/png');
 }
@@ -113,15 +136,11 @@ client.on(Events.GuildMemberAdd, async member => {
     if (!channelId) return;
     const channel = member.guild.channels.cache.get(channelId);
     if (!channel) return;
-
     try {
         const buffer = await createWelcomeImage(member, 'join');
         if (!buffer) return;
-        await channel.send({ 
-            content: `Halo ${member}! Selamat datang di **${member.guild.name}** 🙏`, 
-            files: [{ attachment: buffer, name: 'welcome.png' }] 
-        });
-    } catch(e){ console.error('Error welcome:', e) }
+        await channel.send({ content: `Halo ${member}! Selamat datang di **${member.guild.name}** 🙏`, files: [{ attachment: buffer, name: 'welcome.png' }] });
+    } catch(e){ console.error('Welcome error:', e) }
 });
 
 client.on(Events.GuildMemberRemove, async member => {
@@ -129,15 +148,11 @@ client.on(Events.GuildMemberRemove, async member => {
     if (!channelId) return;
     const channel = member.guild.channels.cache.get(channelId);
     if (!channel) return;
-
     try {
         const buffer = await createWelcomeImage(member, 'leave');
         if (!buffer) return;
-        await channel.send({ 
-            content: `${member.user.username} telah keluar dari server.`, 
-            files: [{ attachment: buffer, name: 'goodbye.png' }] 
-        });
-    } catch(e){ console.error('Error goodbye:', e) }
+        await channel.send({ content: `**${member.user.username}** telah keluar.`, files: [{ attachment: buffer, name: 'goodbye.png' }] });
+    } catch(e){ console.error('Goodbye error:', e) }
 });
 
 client.login(process.env.TOKEN);
