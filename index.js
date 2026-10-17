@@ -12,11 +12,15 @@ const client = new Client({
 });
 
 client.commands = new Collection();
+
+// Load semua command termasuk claimrole.js
 const commandFiles = fs.readdirSync(__dirname).filter(f => f.endsWith('.js') && f !== 'index.js');
 for (const file of commandFiles) {
     try {
         const command = require(path.join(__dirname, file));
-        if (command.data && command.execute) client.commands.set(command.data.name, command);
+        if (command.data && command.execute) {
+            client.commands.set(command.data.name, command);
+        }
     } catch (e) {
         console.log(`Gagal load ${file}: ${e.message}`);
     }
@@ -26,12 +30,14 @@ client.once(Events.ClientReady, () => {
     console.log(`BOT ONLINE BOS! ${client.user.tag}`);
 });
 
+// HANDLER COMMAND + BUTTON CLAIM ROLE
 client.on(Events.InteractionCreate, async interaction => {
-    // SLASH COMMAND
     if (interaction.isChatInputCommand()) {
         const command = client.commands.get(interaction.commandName);
         if (!command) return;
-        try { await command.execute(interaction); } catch (err) {
+        try {
+            await command.execute(interaction);
+        } catch (err) {
             console.error(err);
             if (!interaction.replied && !interaction.deferred) {
                 await interaction.reply({ content: 'Error bos!', ephemeral: true }).catch(()=>{});
@@ -40,7 +46,6 @@ client.on(Events.InteractionCreate, async interaction => {
         return;
     }
     
-    // BUTTON CLAIM ROLE - VERSI FIX
     if (interaction.isButton()) {
         if (!interaction.customId.startsWith('claim_')) return;
         const isLaki = interaction.customId === 'claim_laki';
@@ -73,7 +78,7 @@ client.on(Events.InteractionCreate, async interaction => {
     }
 });
 
-// WELCOME & LEAVE - EMBED APP
+// === WELCOME & LEAVE - NO CANVAS, PAKE EMBED DOANG ===
 const WELCOME_CHANNEL_ID = process.env.WELCOME_CHANNEL_ID || '1550581721538494547';
 const CLAIM_ROLE_CHANNEL_ID = '1550728594421055648';
 
@@ -88,7 +93,8 @@ client.on(Events.GuildMemberAdd, async member => {
             `Silakan menuju <#${CLAIM_ROLE_CHANNEL_ID}> untuk memilih peran **Laki-Laki** atau **Perempuan**.\n\n` +
             `*Welcome Aboard and Enjoy the Server!*`
         )
-        .setColor(0xFFD700).setTimestamp();
+        .setColor(0xFFD700)
+        .setTimestamp();
     await channel.send({ embeds: [embed] }).catch(console.error);
 });
 
@@ -98,7 +104,8 @@ client.on(Events.GuildMemberRemove, async member => {
     const embed = new EmbedBuilder()
         .setTitle('👋 Selamat Jalan!')
         .setDescription(`**${member.user?.username || member.displayName}** telah meninggalkan **PADEPOKAN NJAM**.\n\nTerima kasih telah menjadi bagian dari server kami. Sampai jumpa di lain kesempatan!`)
-        .setColor(0x2B2D31).setTimestamp();
+        .setColor(0x2B2D31)
+        .setTimestamp();
     await channel.send({ embeds: [embed] }).catch(console.error);
 });
 
