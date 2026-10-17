@@ -11,7 +11,7 @@ const client = new Client({
 });
 
 const LEVEL_CHANNEL_ID = '1555838676150394911';
-const levelsFile = './levels.json';
+const levelsFile = '/app/data/levels.json';
 let levels = {};
 if (fs.existsSync(levelsFile)) {
   levels = JSON.parse(fs.readFileSync(levelsFile, 'utf8'));
