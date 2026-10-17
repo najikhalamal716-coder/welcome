@@ -1,7 +1,6 @@
-const { Client, GatewayIntentBits, Collection, Events } = require('discord.js');
+const { Client, GatewayIntentBits, Collection, Events, EmbedBuilder } = require('discord.js');
 const fs = require('fs');
 const path = require('path');
-const { createCanvas, loadImage } = require('canvas');
 
 const client = new Client({
     intents: [
@@ -71,7 +70,6 @@ client.on(Events.InteractionCreate, async interaction => {
         const otherRole = interaction.guild.roles.cache.find(r => r.name.toUpperCase() === otherRoleName);
 
         try {
-            // Hapus role lawan jenis biar cuma 1
             if (otherRole && member.roles.cache.has(otherRole.id)) {
                 await member.roles.remove(otherRole);
             }
@@ -89,69 +87,44 @@ client.on(Events.InteractionCreate, async interaction => {
     }
 });
 
-// === WELCOME IMAGE - PRESISI & ANTI KOTAK ===
-async function createWelcomeImage(member, type) {
-    const possibleFiles = type === 'join' ? ['welcome-bg.png','welcome-bg.jpg'] : ['goodbye-bg.png','goodbye-bg.jpg'];
-    let bgPath = null;
-    for (const f of possibleFiles) {
-        const p = path.join(__dirname, 'assets', f);
-        if (fs.existsSync(p)) { bgPath = p; break; }
-    }
-    if (!bgPath) return null;
-
-    const background = await loadImage(bgPath);
-    const canvas = createCanvas(background.width, background.height);
-    const ctx = canvas.getContext('2d');
-    ctx.drawImage(background, 0, 0, canvas.width, canvas.height);
-
-    const centerX = canvas.width / 2;
-    const centerY = canvas.height * 0.525;
-    const avatarRadius = canvas.height * 0.255;
-
-    try {
-        const avatarURL = member.user.displayAvatarURL({ extension: 'png', size: 1024, forceStatic: true });
-        const avatar = await loadImage(avatarURL);
-        ctx.save();
-        ctx.beginPath();
-        ctx.arc(centerX, centerY, avatarRadius, 0, Math.PI * 2);
-        ctx.clip();
-        ctx.drawImage(avatar, centerX - avatarRadius, centerY - avatarRadius, avatarRadius*2, avatarRadius*2);
-        ctx.restore();
-    } catch(e){}
-
-    ctx.textAlign = 'center';
-    ctx.fillStyle = '#E9C57A';
-    ctx.shadowColor = 'rgba(0,0,0,0.9)';
-    ctx.shadowBlur = 10;
-    let cleanName = member.user.username.toUpperCase().replace(/[^A-Z0-9]/g, '').substring(0, 16);
-    if (cleanName.length < 2) cleanName = "MEMBER BARU";
-    ctx.font = `bold ${Math.floor(canvas.width * 0.042)}px Sans`;
-    ctx.fillText(cleanName, centerX, canvas.height * 0.89);
-
-    return canvas.toBuffer('image/png');
-}
+// === WELCOME/GOODBYE - BROADCAST APP VERSI LAMA BAHASA BAGUS (NO GAMBAR) ===
+const WELCOME_CHANNEL_ID = process.env.WELCOME_CHANNEL_ID || '1550581721538494547';
+const CLAIM_ROLE_CHANNEL_ID = '1550728594421055648';
 
 client.on(Events.GuildMemberAdd, async member => {
-    const channelId = process.env.WELCOME_CHANNEL_ID;
-    if (!channelId) return;
-    const channel = member.guild.channels.cache.get(channelId);
-    if (!channel) return;
+    const channel = member.guild.channels.cache.get(WELCOME_CHANNEL_ID);
+    if (!channel) return console.log('Channel welcome ga ketemu bos!');
     try {
-        const buffer = await createWelcomeImage(member, 'join');
-        if (!buffer) return;
-        await channel.send({ content: `Halo ${member}! Selamat datang di **${member.guild.name}** 🙏`, files: [{ attachment: buffer, name: 'welcome.png' }] });
+        const embed = new EmbedBuilder()
+            .setTitle('👋 Selamat Datang!')
+            .setDescription(
+                `Selamat datang **${member.user.username}** di **PADEPOKAN NJAM**!\n\n` +
+                `Senang rasanya kamu bergabung bersama kami. Semoga betah dan nyaman di sini.\n` +
+                `Silakan menuju <#${CLAIM_ROLE_CHANNEL_ID}> untuk memilih peran **Laki-Laki** atau **Perempuan**.\n\n` +
+                `*Welcome Aboard and Enjoy the Server!*`
+            )
+            .setColor(0xFFD700)
+            .setTimestamp();
+        
+        // Biar tampil kayak APP kayak screenshot lu
+        await channel.send({ embeds: [embed] });
     } catch(e){ console.error('Welcome error:', e) }
 });
 
 client.on(Events.GuildMemberRemove, async member => {
-    const channelId = process.env.WELCOME_CHANNEL_ID;
-    if (!channelId) return;
-    const channel = member.guild.channels.cache.get(channelId);
-    if (!channel) return;
+    const channel = member.guild.channels.cache.get(WELCOME_CHANNEL_ID);
+    if (!channel) return console.log('Channel welcome ga ketemu bos!');
     try {
-        const buffer = await createWelcomeImage(member, 'leave');
-        if (!buffer) return;
-        await channel.send({ content: `**${member.user.username}** telah keluar.`, files: [{ attachment: buffer, name: 'goodbye.png' }] });
+        const embed = new EmbedBuilder()
+            .setTitle('👋 Selamat Jalan!')
+            .setDescription(
+                `**${member.user?.username || member.displayName}** telah meninggalkan **PADEPOKAN NJAM**.\n\n` +
+                `Terima kasih telah menjadi bagian dari server kami. Sampai jumpa di lain kesempatan!`
+            )
+            .setColor(0x2B2D31)
+            .setTimestamp();
+
+        await channel.send({ embeds: [embed] });
     } catch(e){ console.error('Goodbye error:', e) }
 });
 
